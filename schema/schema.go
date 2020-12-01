@@ -54,3 +54,13 @@ func Parse(dest interface{}, dialect dialect.Dialect) *Schema {
 	}
 	return schema
 }
+
+// 将 struct 转为 表中记录值数组
+func (s *Schema) ToRecordValues(dest interface{}) []interface{} {
+	destValue := reflect.Indirect(reflect.ValueOf(dest))
+	var fieldValues []interface{}
+	for _, field := range s.Fields{
+		fieldValues = append(fieldValues, destValue.FieldByName(field.Name).Interface())
+	}
+	return fieldValues
+}
