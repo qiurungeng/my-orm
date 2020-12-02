@@ -1,6 +1,7 @@
 package session
 
 import (
+	"errors"
 	"myorm/clause"
 	"myorm/log"
 	"reflect"
@@ -56,4 +57,82 @@ func (s *Session) Find(valueSlice interface{}) error {
 		destSlice.Set(reflect.Append(destSlice, dest))
 	}
 	return rows.Close()
+}
+
+
+// FindFirst: 查询第一条记录
+func (s *Session) FindFirst(resultPtr interface{}) error {
+	result := reflect.Indirect(reflect.ValueOf(resultPtr))
+	destSlice := reflect.New(reflect.SliceOf(result.Type())).Elem()
+	if err := s.Limit(1).Find(destSlice.Addr().Interface()); err != nil{
+		return err
+	}
+	if destSlice.Len() == 0 {
+		return errors.New("NOT FOUND")
+	}
+	result.Set(destSlice.Index(0))
+	return nil
+}
+
+// Update:
+// Session s 必须提前设定 refTable
+// 传入参数支持 map, 也支持 field1, value1, field2, value2......
+func (s *Session) Update(kv ...interface{}) (int64, error) {
+	m, ok := kv[0].(map[string]interface{})
+	if !ok {
+		m = make(map[string]interface{})
+		for i := 0 ; i < len(kv); i += 2 {
+			m[kv[i].(string) + " = ?"] = kv[i+1]
+		}
+	}
+	s.clause.Set(clause.UPDATE, s.GetRefTable().Name, m)
+	sql, vars := s.clause.Build(clause.UPDATE, clause.WHERE)
+	result, err := s.Raw(sql, vars...).Exec()
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// Delete:
+// 必须提前设定 refTable
+func (s *Session) Delete() (int64, error) {
+	s.clause.Set(clause.DELETE, s.GetRefTable().Name)
+	sql, vars := s.clause.Build(clause.DELETE, clause.WHERE)
+	res, err := s.Raw(sql, vars...).Exec()
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// Count: SELECT COUNT(*) ... WHERE ...
+func (s *Session) Count() (int64, error) {
+	s.clause.Set(clause.COUNT, s.GetRefTable().Name)
+	sql, vars := s.clause.Build(clause.COUNT, clause.WHERE)
+	row := s.Raw(sql, vars...).QueryRow()
+	var count int64
+	if err := row.Scan(&count); err != nil{
+		return 0, err
+	}
+	return count, nil
+}
+
+
+//链式调用
+
+func (s *Session) Limit(num int) *Session {
+	s.clause.Set(clause.LIMIT, num)
+	return s
+}
+
+func (s *Session) Where(condition string, args ...interface{}) *Session {
+	var vars []interface{}
+	s.clause.Set(clause.WHERE, append(append(vars, condition), args...)...)
+	return s
+}
+
+func (s *Session) OrderBy(field string) *Session {
+	s.clause.Set(clause.ORDERBY, field)
+	return s
 }

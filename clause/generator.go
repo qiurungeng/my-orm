@@ -17,6 +17,30 @@ func init() {
 	generators[LIMIT] = _limit
 	generators[ORDERBY] = _orderBy
 	generators[WHERE] = _where
+	generators[UPDATE] = _update
+	generators[DELETE] = _delete
+	generators[COUNT] = _count
+}
+
+// _count 只有一个入参，即表名，并复用了 _select 生成器
+func _count(values ...interface{}) (string, []interface{}) {
+	return _select(values[0], []string{"count(*)"})
+}
+
+func _delete(values ...interface{}) (string, []interface{}) {
+	return fmt.Sprintf("DELETE FROM %s", values[0]), []interface{}{}
+}
+
+func _update(values ...interface{}) (string, []interface{}) {
+	tableName := values[0]
+	m := values[1].(map[string]interface{})
+	var keys []string
+	var vars []interface{}
+	for key, val := range m{
+		keys = append(keys, key)
+		vars = append(vars, val)
+	}
+	return fmt.Sprintf("UPDATE %s SET %s", tableName, strings.Join(keys, ", ")), vars
 }
 
 // 生成预编译占位符: "?, ?, ?, ... ?, "
@@ -42,6 +66,7 @@ func _values(values ...interface{}) (string, []interface{}) {
 	var sql strings.Builder
 	sql.WriteString("VALUES ")
 	for i, value := range values{
+		// 每个Model的RecordValues都是一个切片，这里个values是一个二维数组
 		v := value.([]interface{})
 		if bindStr == "" {
 			bindStr = genBindVars(len(v))
@@ -77,3 +102,4 @@ func _where(values ...interface{}) (string, []interface{}) {
 func _orderBy(values ...interface{}) (string, []interface{}) {
 	return fmt.Sprintf("ORDER BY %s", values[0]), []interface{}{}
 }
+

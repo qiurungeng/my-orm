@@ -1,6 +1,7 @@
 package clause
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -37,4 +38,11 @@ func TestClause_Build(t *testing.T) {
 		testSelect(t)
 		testInsert(t)
 	})
+}
+
+func TestUpdate(t *testing.T)  {
+	fmt.Println(_update("User", map[string]interface{}{
+		"Name": "Tom",
+		"Age": 13,
+	}))
 }
