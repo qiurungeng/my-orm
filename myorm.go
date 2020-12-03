@@ -48,3 +48,29 @@ func (e *Engine) Close() {
 func (e *Engine) NewSession() *session.Session {
 	return session.New(e.db, e.dialect)
 }
+
+
+// 编程式事务支持:
+
+type TxFunc func(*session.Session) (result interface{}, err error)
+
+func (e *Engine) Transaction(f TxFunc) (result interface{}, err error) {
+	//事务新开启一个Session
+	s := e.NewSession()
+	if err = s.Begin(); err != nil {
+		return nil, err
+	}
+	defer func() {
+		//出现panic时先Rollback再panic
+		if p := recover(); p != nil {
+			//忽略此处错误, 不要让Rollback的error覆盖了f的error
+			_ = s.Rollback()
+			panic(p)
+		} else if err != nil {
+			_ = s.Rollback()
+		} else {
+			err = s.Commit()
+		}
+	}()
+	return f(s)
+}

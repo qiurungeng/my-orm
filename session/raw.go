@@ -16,6 +16,7 @@ type Session struct {
 	clause   clause.Clause
 	sql      strings.Builder
 	sqlVars  []interface{}
+	tx 		 *sql.Tx
 }
 
 func New(db *sql.DB, dialect dialect.Dialect) *Session {
@@ -31,7 +32,10 @@ func (s *Session) Clear() {
 	s.clause = clause.Clause{}
 }
 
-func (s *Session) DB() *sql.DB {
+func (s *Session) DB() CommonDB {
+	if s.tx != nil {
+		return s.tx
+	}
 	return s.db
 }
 
@@ -43,6 +47,11 @@ func (s *Session) Raw(sql string, values ...interface{}) *Session {
 }
 
 
+type CommonDB interface {
+	Exec(query string, args ...interface{}) (sql.Result, error)
+	Query(query string, args ...interface{}) (*sql.Rows, error)
+	QueryRow(query string, args ...interface{}) *sql.Row
+}
 // 封装 Exec()、Query() 和 QueryRow() 三个原生方法
 // 封装有 2 个目的，一是统一打印日志（包括 执行的SQL 语句和错误日志）。
 // 二是执行完成后，清空 (s *Session).sql 和 (s *Session).sqlVars 两个变量。
