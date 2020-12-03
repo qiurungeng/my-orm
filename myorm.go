@@ -2,9 +2,11 @@ package myorm
 
 import (
 	"database/sql"
+	"fmt"
 	"myorm/dialect"
 	"myorm/log"
 	"myorm/session"
+	"strings"
 )
 
 type Engine struct {
@@ -50,7 +52,7 @@ func (e *Engine) NewSession() *session.Session {
 }
 
 
-// 编程式事务支持:
+/********************************事务支持*********************************/
 
 type TxFunc func(*session.Session) (result interface{}, err error)
 
@@ -73,4 +75,60 @@ func (e *Engine) Transaction(f TxFunc) (result interface{}, err error) {
 		}
 	}()
 	return f(s)
+}
+
+
+/********************************数据迁移*********************************/
+
+// difference returns set(a) - set(b)
+func difference(a, b []string) (diff []string) {
+	mapB := make(map[string]bool)
+	for _, val := range b{
+		mapB[val] = true
+	}
+	for _, val := range a{
+		if !mapB[val]{
+			diff = append(diff, val)
+		}
+	}
+	return
+}
+
+// Migrate:
+// Model 新增或删除字段, 那么它所映射的表结构也要进行变更
+// Migrate 方法帮我们实现对表结构的变更
+func (e *Engine) Migrate(newTableStruct interface{}) error {
+	_, err := e.Transaction(func(s *session.Session) (result interface{}, err error) {
+		if !s.SetRefTableByModel(newTableStruct).HasTable() {
+			log.Error("table %s doesn't exists.", s.GetRefTable().Name)
+			return nil, s.CreateTable()
+		}
+		table := s.GetRefTable()
+		rows, _ := s.Raw(fmt.Sprintf("SELECT * FROM %s LIMIT 1;", table.Name)).QueryRows()
+		columns, _ := rows.Columns()
+		addCols := difference(table.FieldNames, columns)
+		delCols := difference(columns, table.FieldNames)
+		log.Infof("add columns:[%V], delete columns:[%s]", addCols, delCols)
+
+		//add new fields
+		for _, col := range addCols {
+			field := table.GetField(col)
+			s.Raw(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s;", table.Name, field.Name, field.Type))
+			if _, err = s.Exec(); err != nil {
+				return
+			}
+		}
+
+		//delete old & create new
+		if len(delCols) > 0 {
+			tmpTable := "tmp_" + table.Name
+			fields := strings.Join(table.FieldNames, ", ")
+			s.Raw(fmt.Sprintf("CREATE TABLE %s AS SELECT %s FROM %s;", tmpTable, fields, table.Name))
+			s.Raw(fmt.Sprintf("DROP TABLE %s;", table.Name))
+			s.Raw(fmt.Sprintf("ALTER TABLE %s RENAME TO %s;", tmpTable, table.Name))
+			_, err = s.Exec()
+		}
+		return
+	})
+	return err
 }
